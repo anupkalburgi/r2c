@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive College Savings Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Neutrals (Slate, Beige, Muted Blue Accent) -->
+    <!-- Application Structure Plan: A top-down narrative structure. Starts with an interactive calculator for immediate engagement and comparison. Follows with tabbed sections for detailed explanation of each method, including a dynamic visualization of the bisection process. Concludes with a step-by-step visual breakdown of the mathematical derivation. This structure is chosen to guide the user from a practical problem to a theoretical understanding in a logical, interactive flow. -->
+    <!-- Visualization & Content Choices: Main interaction is a calculator with sliders (Goal: Compare) updating two result cards (Goal: Inform) and a Chart.js line chart that visualizes the bisection convergence (Goal: Change/Visualize), showing the iterative narrowing of bounds. This is chosen to make the performance difference tangible. The derivation is presented in styled HTML cards (Goal: Organize) to make the math approachable. NO SVG/Mermaid used. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f7f4;
+            color: #1f2937;
+        }
+        .tab-active {
+            background-color: #3b82f6;
+            color: #ffffff;
+        }
+        .tab-inactive {
+            background-color: #e5e7eb;
+            color: #374151;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px;
+            max-height: 50vh;
+        }
+        .latex {
+            font-family: "Times New Roman", Times, serif;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-10">
+            <h1 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-800">From Iteration to Insight</h1>
+            <p class="mt-3 text-lg text-gray-600 max-w-3xl mx-auto">An interactive demonstration of how applying mathematical theory provides a more elegant and efficient solution to a real-world problem.</p>
+        </header>
+
+        <main>
+            <section id="calculator" class="mb-12 bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-bold text-center mb-2">College Savings Calculator</h2>
+                <p class="text-center text-gray-600 mb-6">Adjust the sliders to see how two different methods calculate your required monthly savings. Notice the difference in speed and approach.</p>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-1 space-y-6">
+                        <div>
+                            <label for="collegeCost" class="block text-sm font-medium text-gray-700">Total College Cost: <span id="collegeCostLabel" class="font-bold text-blue-600">$200,000</span></label>
+                            <input id="collegeCost" type="range" min="50000" max="500000" step="1000" value="200000" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div>
+                            <label for="kidAge" class="block text-sm font-medium text-gray-700">Child's Current Age: <span id="kidAgeLabel" class="font-bold text-blue-600">10 years</span></label>
+                            <input id="kidAge" type="range" min="0" max="17" step="1" value="10" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div>
+                            <label for="annualRate" class="block text-sm font-medium text-gray-700">Annual Investment Rate: <span id="annualRateLabel" class="font-bold text-blue-600">6.0%</span></label>
+                            <input id="annualRate" type="range" min="1" max="12" step="0.1" value="6" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div>
+                            <label for="startBalance" class="block text-sm font-medium text-gray-700">Current Savings: <span id="startBalanceLabel" class="font-bold text-blue-600">$25,000</span></label>
+                            <input id="startBalance" type="range" min="0" max="200000" step="1000" value="25000" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+                    <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="bg-blue-50 border-2 border-dashed border-blue-200 rounded-lg p-6 flex flex-col items-center justify-center text-center">
+                            <h3 class="text-xl font-semibold text-blue-800">Bisection Method</h3>
+                            <p class="text-sm text-blue-600 mb-3">(Iterative Guessing)</p>
+                            <p id="bisectionResult" class="text-4xl font-bold text-blue-900">$1,161.10</p>
+                            <p class="mt-2 text-xs text-gray-500">Calculation Time: <span id="bisectionTime">...</span></p>
+                        </div>
+                        <div class="bg-green-50 border-2 border-dashed border-green-200 rounded-lg p-6 flex flex-col items-center justify-center text-center">
+                            <h3 class="text-xl font-semibold text-green-800">Formula Method</h3>
+                            <p class="text-sm text-green-600 mb-3">(Direct Calculation)</p>
+                            <p id="formulaResult" class="text-4xl font-bold text-green-900">$1,161.10</p>
+                            <p class="mt-2 text-xs text-gray-500">Calculation Time: <span id="formulaTime">...</span></p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="methods" class="mb-12">
+                <div class="flex justify-center mb-6 border-b border-gray-200">
+                    <button id="tabBisection" class="tab-btn tab-active py-2 px-6 font-semibold rounded-t-lg transition-colors duration-300">The Bisection Method</button>
+                    <button id="tabFormula" class="tab-btn tab-inactive py-2 px-6 font-semibold rounded-t-lg transition-colors duration-300">The Formula Method</button>
+                </div>
+
+                <div id="contentBisection" class="content-panel bg-white p-6 rounded-xl shadow-lg">
+                    <h3 class="text-2xl font-bold mb-4">Approach 1: The Intuitive Numerical Solution</h3>
+                    <p class="mb-4 text-gray-600">A logical first approach is to build a simulation. We can create a function that takes a monthly contribution as input and simulates the account balance year by year. The bisection method is a root-finding algorithm that repeatedly guesses an answer to narrow down the correct result.</p>
+                    <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+                      <h4 class="font-semibold text-lg mb-2">How It Works:</h4>
+                      <ol class="list-decimal list-inside space-y-1 text-gray-700">
+                        <li>Start with a low guess (e.g., $0) and a high guess.</li>
+                        <li>Calculate the final balance using the midpoint of the guess range.</li>
+                        <li>If the balance is too high, the midpoint becomes the new high guess.</li>
+                        <li>If the balance is too low, the midpoint becomes the new low guess.</li>
+                        <li>Repeat until the balance is acceptably close to zero.</li>
+                      </ol>
+                    </div>
+                    <h4 class="text-xl font-bold text-center mb-4">Visualizing the Convergence</h4>
+                     <div class="chart-container">
+                        <canvas id="bisectionChart"></canvas>
+                    </div>
+                </div>
+
+                <div id="contentFormula" class="content-panel bg-white p-6 rounded-xl shadow-lg hidden">
+                    <h3 class="text-2xl font-bold mb-4">Approach 2: The Efficient Analytical Solution</h3>
+                    <p class="mb-4 text-gray-600">Mathematics provides a more direct path. This problem can be solved instantly using standard financial formulas derived from the principles of annuities. This approach eliminates all guesswork and iteration.</p>
+                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="p-4 bg-gray-50 rounded-lg">
+                             <h4 class="font-semibold text-lg mb-2">Concept 1: Present Value of an Annuity Due</h4>
+                             <p class="text-gray-700">This formula calculates the lump sum needed at the <strong>start</strong> of a period to fund a series of future withdrawals. We use it to determine the exact total savings needed on the child's 18th birthday.</p>
+                        </div>
+                        <div class="p-4 bg-gray-50 rounded-lg">
+                            <h4 class="font-semibold text-lg mb-2">Concept 2: Future Value of an Annuity</h4>
+                            <p class="text-gray-700">Also known as a sinking fund formula, this calculates the fixed payment required to reach a specific future savings goal. We use it to find the precise monthly contribution needed.</p>
+                        </div>
+                    </div>
+                     <p class="mt-6 text-center text-gray-700">This two-step formulaic approach is instantaneous and mathematically precise, representing a significant improvement in efficiency.</p>
+                </div>
+            </section>
+            
+            <section id="derivation" class="bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-bold text-center mb-6">Connecting Theory to Practice: The Derivation</h2>
+                <p class="text-center max-w-3xl mx-auto text-gray-600 mb-8">The "magic" formula isn't arbitrary; it's derived from the fundamental, year-by-year calculation using the sum of a finite geometric series. This shows how theory creates efficient, practical solutions.</p>
+
+                <div class="space-y-4 max-w-3xl mx-auto">
+                    <div class="p-4 bg-gray-50 rounded-lg">
+                        <p class="font-semibold">1. The Long Calculation (The Sum of Present Values):</p>
+                        <p class="text-center text-lg mt-2 latex">PV = P/(1+r)¹ + P/(1+r)² + ... + P/(1+r)ⁿ</p>
+                    </div>
+                    <div class="text-center font-bold text-2xl text-gray-400">↓</div>
+                    <div class="p-4 bg-gray-50 rounded-lg">
+                        <p class="font-semibold">2. Factor out the Payment (P):</p>
+                        <p class="text-center text-lg mt-2 latex">PV = P [ 1/(1+r)¹ + 1/(1+r)² + ... + 1/(1+r)ⁿ ]</p>
+                    </div>
+                    <div class="text-center font-bold text-2xl text-gray-400">↓</div>
+                     <div class="p-4 bg-gray-50 rounded-lg">
+                        <p class="font-semibold">3. Identify the Geometric Series and Apply its Sum Formula:</p>
+                        <p class="text-center text-lg mt-2 latex">Sum = a * (1 - qⁿ) / (1 - q)</p>
+                    </div>
+                    <div class="text-center font-bold text-2xl text-gray-400">↓</div>
+                    <div class="p-4 bg-gray-50 rounded-lg">
+                        <p class="font-semibold">4. Simplify the Expression:</p>
+                         <p class="text-center text-lg mt-2 latex">Sum = (1 - (1+r)⁻ⁿ) / r</p>
+                    </div>
+                    <div class="text-center font-bold text-2xl text-gray-400">↓</div>
+                    <div class="p-4 bg-blue-100 rounded-lg border border-blue-300">
+                        <p class="font-bold text-blue-800">5. The Final Formula:</p>
+                        <p class="text-center text-xl mt-2 font-semibold latex text-blue-900">PV = P [ (1 - (1+r)⁻ⁿ) / r ]</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+        
+        <footer class="text-center mt-12 pt-6 border-t border-gray-200">
+            <p class="text-sm text-gray-500">An interactive application based on the report "From Iteration to Insight."</p>
+        </footer>
+    </div>
+
+    <script>
+        const collegeCostSlider = document.getElementById('collegeCost');
+        const kidAgeSlider = document.getElementById('kidAge');
+        const annualRateSlider = document.getElementById('annualRate');
+        const startBalanceSlider = document.getElementById('startBalance');
+
+        const collegeCostLabel = document.getElementById('collegeCostLabel');
+        const kidAgeLabel = document.getElementById('kidAgeLabel');
+        const annualRateLabel = document.getElementById('annualRateLabel');
+        const startBalanceLabel = document.getElementById('startBalanceLabel');
+
+        const bisectionResultEl = document.getElementById('bisectionResult');
+        const formulaResultEl = document.getElementById('formulaResult');
+        const bisectionTimeEl = document.getElementById('bisectionTime');
+        const formulaTimeEl = document.getElementById('formulaTime');
+
+        const tabBisection = document.getElementById('tabBisection');
+        const tabFormula = document.getElementById('tabFormula');
+        const contentBisection = document.getElementById('contentBisection');
+        const contentFormula = document.getElementById('contentFormula');
+
+        let bisectionChart;
+
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+        }
+
+        function formatCurrencyWithCents(value) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+        }
+        
+        function updateLabels() {
+            collegeCostLabel.textContent = formatCurrency(collegeCostSlider.value);
+            kidAgeLabel.textContent = `${kidAgeSlider.value} years`;
+            annualRateLabel.textContent = `${parseFloat(annualRateSlider.value).toFixed(1)}%`;
+            startBalanceLabel.textContent = formatCurrency(startBalanceSlider.value);
+        }
+        
+        function formulaMethod(collegeCost, annualRate, kidCurrentAge, startBalance) {
+            const annualCollegeCost = collegeCost / 4;
+            const monthlyRate = (annualRate / 100) / 12;
+            const nMonthsSaving = Math.max(0, 18 - kidCurrentAge) * 12;
+
+            if (nMonthsSaving === 0 && startBalance < collegeCost) return Infinity;
+
+            let requiredAtCollegeStart = collegeCost;
+            if (annualRate > 0) {
+                const effectiveAnnualRate = Math.pow(1 + monthlyRate, 12) - 1;
+                const pvFactor = (1 - Math.pow(1 + effectiveAnnualRate, -4)) / effectiveAnnualRate;
+                requiredAtCollegeStart = annualCollegeCost * pvFactor * (1 + effectiveAnnualRate);
+            }
+
+            const fvExisting = startBalance * Math.pow(1 + monthlyRate, nMonthsSaving);
+            const targetRemaining = requiredAtCollegeStart - fvExisting;
+
+            if (targetRemaining <= 0) return 0.0;
+
+            let monthlyContribution = Infinity;
+            if (annualRate > 0) {
+                if (nMonthsSaving > 0) {
+                    const numerator = targetRemaining * monthlyRate;
+                    const denominator = Math.pow(1 + monthlyRate, nMonthsSaving) - 1;
+                    monthlyContribution = numerator / denominator;
+                }
+            } else {
+                 if (nMonthsSaving > 0) {
+                    monthlyContribution = targetRemaining / nMonthsSaving;
+                 }
+            }
+            return monthlyContribution;
+        }
+        
+        function bisectionMethod(collegeCost, annualRate, kidCurrentAge, startBalance) {
+            const history = [];
+
+            const simulateBalance = (monthlyContribution) => {
+                let balance = startBalance;
+                const monthlyRate = (annualRate / 100) / 12;
+                const nMonthsSaving = Math.max(0, 18 - kidCurrentAge) * 12;
+
+                for (let i = 0; i < nMonthsSaving; i++) {
+                    balance = balance * (1 + monthlyRate) + monthlyContribution;
+                }
+
+                const annualCollegeCost = collegeCost / 4;
+                for (let i = 0; i < 4; i++) {
+                    balance -= annualCollegeCost;
+                    if (i < 3) {
+                       balance *= Math.pow(1 + monthlyRate, 12);
+                    }
+                }
+                return balance;
+            };
+
+            let lowerBound = 0;
+            let upperBound = (collegeCost / Math.max(1, 18 - kidCurrentAge)) / 12 * 2;
+            let midContribution = 0;
+
+            for (let i = 0; i < 100; i++) {
+                midContribution = (lowerBound + upperBound) / 2;
+                const finalBalance = simulateBalance(midContribution);
+
+                history.push({
+                    iteration: i + 1,
+                    lower: lowerBound,
+                    upper: upperBound,
+                    guess: midContribution
+                });
+
+                if (Math.abs(finalBalance) < 0.01) {
+                    return { result: midContribution, history: history };
+                } else if (finalBalance > 0) {
+                    upperBound = midContribution;
+                } else {
+                    lowerBound = midContribution;
+                }
+            }
+            return { result: midContribution, history: history };
+        }
+
+        function updateChart(history) {
+            const labels = history.map(h => h.iteration);
+            const lowerData = history.map(h => h.lower);
+            const upperData = history.map(h => h.upper);
+            const guessData = history.map(h => h.guess);
+
+            if (bisectionChart) {
+                bisectionChart.data.labels = labels;
+                bisectionChart.data.datasets[0].data = lowerData;
+                bisectionChart.data.datasets[1].data = upperData;
+                bisectionChart.data.datasets[2].data = guessData;
+                bisectionChart.update();
+            } else {
+                const ctx = document.getElementById('bisectionChart').getContext('2d');
+                bisectionChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Lower Bound',
+                                data: lowerData,
+                                borderColor: 'rgba(239, 68, 68, 0.6)',
+                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                borderWidth: 2,
+                                tension: 0.1
+                            },
+                            {
+                                label: 'Upper Bound',
+                                data: upperData,
+                                borderColor: 'rgba(59, 130, 246, 0.6)',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                borderWidth: 2,
+                                tension: 0.1
+                            },
+                            {
+                                label: 'Guess',
+                                data: guessData,
+                                borderColor: 'rgba(22, 163, 74, 1)',
+                                backgroundColor: 'rgba(22, 163, 74, 0.2)',
+                                borderWidth: 3,
+                                fill: true,
+                                tension: 0.1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: { display: true, text: 'How Bisection Narrows the Search' },
+                            tooltip: { mode: 'index', intersect: false }
+                        },
+                        scales: {
+                            x: { title: { display: true, text: 'Iteration' } },
+                            y: { title: { display: true, text: 'Monthly Contribution ($)' },
+                                ticks: {
+                                    callback: function(value, index, values) {
+                                        return formatCurrency(value);
+                                    }
+                                }
+                             }
+                        },
+                        interaction: {
+                            mode: 'nearest',
+                            axis: 'x',
+                            intersect: false
+                        }
+                    }
+                });
+            }
+        }
+
+        function calculateAndDisplay() {
+            const cost = parseFloat(collegeCostSlider.value);
+            const age = parseInt(kidAgeSlider.value);
+            const rate = parseFloat(annualRateSlider.value);
+            const balance = parseFloat(startBalanceSlider.value);
+
+            let startTime, endTime;
+
+            startTime = performance.now();
+            const { result: bisectionRes, history } = bisectionMethod(cost, rate, age, balance);
+            endTime = performance.now();
+            bisectionTimeEl.textContent = `${(endTime - startTime).toFixed(2)} ms`;
+            bisectionResultEl.textContent = isFinite(bisectionRes) ? formatCurrencyWithCents(bisectionRes) : 'N/A';
+
+            startTime = performance.now();
+            const formulaRes = formulaMethod(cost, rate, age, balance);
+            endTime = performance.now();
+            formulaTimeEl.textContent = `${(endTime - startTime).toFixed(2)} ms`;
+            formulaResultEl.textContent = isFinite(formulaRes) ? formatCurrencyWithCents(formulaRes) : 'N/A';
+            
+            updateChart(history);
+        }
+
+        function handleTabClick(e) {
+            const clickedTab = e.target;
+            if (clickedTab.id === 'tabBisection') {
+                tabBisection.classList.replace('tab-inactive', 'tab-active');
+                tabFormula.classList.replace('tab-active', 'tab-inactive');
+                contentBisection.classList.remove('hidden');
+                contentFormula.classList.add('hidden');
+            } else if (clickedTab.id === 'tabFormula') {
+                tabFormula.classList.replace('tab-inactive', 'tab-active');
+                tabBisection.classList.replace('tab-active', 'tab-inactive');
+                contentFormula.classList.remove('hidden');
+                contentBisection.classList.add('hidden');
+            }
+        }
+
+        [collegeCostSlider, kidAgeSlider, annualRateSlider, startBalanceSlider].forEach(slider => {
+            slider.addEventListener('input', updateLabels);
+            slider.addEventListener('change', calculateAndDisplay);
+        });
+
+        tabBisection.addEventListener('click', handleTabClick);
+        tabFormula.addEventListener('click', handleTabClick);
+
+        document.addEventListener('DOMContentLoaded', () => {
+            updateLabels();
+            calculateAndDisplay();
+        });
+    </script>
+</body>
+</html>
