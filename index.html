@@ -13,7 +13,7 @@
             padding: 0;
         }
         .container {
-            max-width: 600px;
+            max-width: 700px;
             margin: 40px auto;
             background: #fffbe7;
             border: 2px solid #222;
@@ -23,42 +23,59 @@
         }
         h1 {
             font-size: 2.2em;
-            margin-bottom: 0.5em;
+            margin-bottom: 1em;
             text-align: center;
             letter-spacing: 2px;
             color: #2d2d2d;
         }
-        ul {
-            list-style-type: square;
-            padding-left: 1.2em;
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+            font-size: 1.05em;
         }
-        li {
-            margin-bottom: 1.2em;
-            font-size: 1.1em;
+        th, td {
+            border: 1.5px solid #222;
+            padding: 10px 8px;
+            text-align: left;
+        }
+        th {
+            background: #f7e6c4;
+            color: #222;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background: #f4f1ee;
         }
         a {
             color: #0057a3;
             text-decoration: underline;
         }
-        .date {
-            color: #888;
-            font-size: 0.95em;
-            margin-left: 0.5em;
-        }
-        @media (max-width: 600px) {
-            .container { padding: 16px 6px; }
+        @media (max-width: 700px) {
+            .container { padding: 12px 2px; }
+            th, td { padding: 6px 2px; font-size: 0.98em; }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Articles Index</h1>
-        <ul>
-            <li>
-                <a href="articles/geometric_series.html">From Iteration to Insight: College Savings Calculator</a>
-                <span class="date">Date: 07-19-2025</span>
-            </li>
-        </ul>
+        <table>
+            <thead>
+                <tr>
+                    <th>Link</th>
+                    <th>Date</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><a href="articles/geometric_series.html">From Iteration to Insight: College Savings Calculator</a></td>
+                    <td>07-19-2025</td>
+                    <td>An interactive demo showing how geometrical series streamlines real-world savings calculations.</td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 </body>
 </html>
