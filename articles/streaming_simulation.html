@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Streaming Pipeline SLA Simulator</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom styles for better look and feel */
+        .card {
+            @apply bg-white rounded-xl shadow-lg p-6;
+        }
+        .btn {
+            @apply px-4 py-2 rounded-lg font-semibold text-white transition-transform transform hover:scale-105;
+        }
+        .btn-primary {
+            @apply bg-blue-600 hover:bg-blue-700;
+        }
+        .btn-secondary {
+            @apply bg-green-600 hover:bg-green-700;
+        }
+        .input-label {
+            @apply block text-sm font-medium text-gray-700 mb-1;
+        }
+        .input-field {
+            @apply w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 sm:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800">Streaming Pipeline SLA Simulator</h1>
+            <p class="text-gray-600 mt-2">Visualize queue behavior and determine the ideal throughput to meet your SLA.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Inputs and Controls Column -->
+            <div class="lg:col-span-1 space-y-6">
+                <div class="card">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">1. Simulation Inputs</h2>
+                    <div>
+                        <label for="inputPattern" class="input-label">Input Pattern (Files per minute, comma-separated)</label>
+                        <textarea id="inputPattern" class="input-field h-32" rows="5">0, 200, 200, 200, 200, 200, 200, 200, 200, 500, 200, 200, 200, 200, 200, 200, 200, 200, 200, 500, 200, 200, 200, 200, 200, 200, 200, 200, 200, 500</textarea>
+                    </div>
+                    <div class="mt-4">
+                        <label for="slaMinutes" class="input-label">SLA (minutes)</label>
+                        <input type="number" id="slaMinutes" class="input-field" value="180">
+                    </div>
+                    <div class="mt-4">
+                        <label for="simulationMinutes" class="input-label">Simulation Duration (minutes)</label>
+                        <input type="number" id="simulationMinutes" class="input-field" value="400">
+                    </div>
+                </div>
+                <div class="card">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">2. Run Simulation</h2>
+                    <div>
+                        <label for="testThroughput" class="input-label">Test Throughput (files/min)</label>
+                        <input type="number" id="testThroughput" class="input-field" value="230">
+                    </div>
+                    <button id="runSimulationBtn" class="btn btn-primary w-full mt-4">Run Single Simulation</button>
+                    <hr class="my-4">
+                    <button id="findIdealBtn" class="btn btn-secondary w-full">Find Ideal Throughput</button>
+                </div>
+            </div>
+
+            <!-- Outputs Column -->
+            <div class="lg:col-span-2 space-y-6">
+                <div class="card">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">3. Results</h2>
+                    <div id="resultsOutput" class="bg-gray-50 p-4 rounded-lg text-gray-700 h-48 overflow-y-auto">
+                        Welcome! Adjust inputs and run a simulation to see the results here.
+                    </div>
+                </div>
+                <div class="card">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">SLA Compliance Chart</h2>
+                    <canvas id="slaChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const inputPatternEl = document.getElementById('inputPattern');
+        const slaMinutesEl = document.getElementById('slaMinutes');
+        const simulationMinutesEl = document.getElementById('simulationMinutes');
+        const testThroughputEl = document.getElementById('testThroughput');
+        const runSimulationBtn = document.getElementById('runSimulationBtn');
+        const findIdealBtn = document.getElementById('findIdealBtn');
+        const resultsOutputEl = document.getElementById('resultsOutput');
+        const chartCanvas = document.getElementById('slaChart');
+        let slaChart; // To hold the chart instance
+
+        // --- Core Simulation Logic ---
+        function runSimulation(filesAddedPerMinute, throughput, simulationMinutes) {
+            const pendingByCohort = new Array(simulationMinutes).fill(0).map(() => new Array(simulationMinutes).fill(0));
+            let maxAgeObserved = 0;
+            const oldestFileAgeData = new Array(simulationMinutes).fill(0);
+
+            for (let t = 1; t < simulationMinutes; t++) {
+                // Carry over from previous minute
+                if (t > 0) {
+                    for (let i = 0; i < simulationMinutes; i++) {
+                        pendingByCohort[t][i] = pendingByCohort[t - 1][i];
+                    }
+                }
+                
+                // Add new files
+                pendingByCohort[t][t] = filesAddedPerMinute[t] || 0;
+                
+                let capacityLeft = throughput;
+                
+                // Process files (FIFO)
+                for (let cohortIndex = 0; cohortIndex <= t; cohortIndex++) {
+                    if (capacityLeft <= 0) break;
+                    const filesToProcess = Math.min(capacityLeft, pendingByCohort[t][cohortIndex]);
+                    if (filesToProcess > 0) {
+                        pendingByCohort[t][cohortIndex] -= filesToProcess;
+                        capacityLeft -= filesToProcess;
+                    }
+                }
+
+                // Calculate oldest file age
+                let oldestCohortIndex = -1;
+                for(let i = 0; i < simulationMinutes; i++) {
+                    if (pendingByCohort[t][i] > 0.01) {
+                        oldestCohortIndex = i;
+                        break;
+                    }
+                }
+
+                if (oldestCohortIndex !== -1) {
+                    const age = t - oldestCohortIndex;
+                    oldestFileAgeData[t] = age;
+                    if (age > maxAgeObserved) {
+                        maxAgeObserved = age;
+                    }
+                }
+            }
+            return { maxAgeObserved, oldestFileAgeData };
+        }
+
+        // --- Charting Function ---
+        function updateChart(oldestFileAgeData, slaMinutes, simulationMinutes) {
+            if (slaChart) {
+                slaChart.destroy();
+            }
+            const ctx = chartCanvas.getContext('2d');
+            const labels = Array.from({ length: simulationMinutes }, (_, i) => i);
+
+            slaChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Age of Oldest File (minutes)',
+                        data: oldestFileAgeData,
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.1,
+                        pointRadius: 0,
+                    }, {
+                        label: 'SLA Threshold',
+                        data: Array(simulationMinutes).fill(slaMinutes),
+                        borderColor: 'rgb(239, 68, 68)',
+                        borderDash: [5, 5],
+                        fill: false,
+                        pointRadius: 0,
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'Wait Time (Minutes)' }
+                        },
+                        x: {
+                            title: { display: true, text: 'Simulation Time (Minutes)' }
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'top' }
+                    },
+                    responsive: true,
+                    maintainAspectRatio: true
+                }
+            });
+        }
+        
+        // --- UI Event Handlers ---
+        function getInputs() {
+            const patternStr = inputPatternEl.value.trim();
+            const basePattern = patternStr.split(',').map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n));
+            const simulationMinutes = parseInt(simulationMinutesEl.value, 10);
+            
+            // Extend the pattern to cover the full simulation time
+            const filesAddedPerMinute = [];
+            for (let i = 0; i < simulationMinutes; i++) {
+                filesAddedPerMinute.push(basePattern[i % basePattern.length]);
+            }
+            
+            const slaMinutes = parseInt(slaMinutesEl.value, 10);
+            return { filesAddedPerMinute, slaMinutes, simulationMinutes, basePattern };
+        }
+
+        runSimulationBtn.addEventListener('click', () => {
+            const { filesAddedPerMinute, slaMinutes, simulationMinutes } = getInputs();
+            const testThroughput = parseInt(testThroughputEl.value, 10);
+            
+            resultsOutputEl.innerHTML = `<p>Running simulation with throughput of ${testThroughput} files/min...</p>`;
+            
+            // Use setTimeout to allow UI to update before blocking
+            setTimeout(() => {
+                const result = runSimulation(filesAddedPerMinute, testThroughput, simulationMinutes);
+                let output = `<p><strong>Simulation Complete</strong></p>`;
+                output += `<p>Throughput Tested: <strong>${testThroughput} files/min</strong></p>`;
+                output += `<p>Max File Age Observed: <strong>${result.maxAgeObserved} minutes</strong></p>`;
+                if (result.maxAgeObserved <= slaMinutes) {
+                    output += `<p class="text-green-600 font-semibold">✅ SLA Met</p>`;
+                } else {
+                    output += `<p class="text-red-600 font-semibold">❌ SLA Breached</p>`;
+                }
+                resultsOutputEl.innerHTML = output;
+                updateChart(result.oldestFileAgeData, slaMinutes, simulationMinutes);
+            }, 10);
+        });
+
+        findIdealBtn.addEventListener('click', () => {
+            const { filesAddedPerMinute, slaMinutes, simulationMinutes, basePattern } = getInputs();
+            
+            const avgInputRate = basePattern.reduce((a, b) => a + b, 0) / basePattern.length;
+            let testThroughput = Math.ceil(avgInputRate);
+            
+            resultsOutputEl.innerHTML = `<p>Average input rate: ${avgInputRate.toFixed(2)} files/min.</p>`;
+            resultsOutputEl.innerHTML += `<p>Searching for ideal throughput to meet ${slaMinutes}-min SLA...</p>`;
+            
+            // Use setTimeout for async-like behavior to prevent UI freeze
+            let searchInProgress = true;
+            function searchStep() {
+                if (!searchInProgress) return;
+
+                const result = runSimulation(filesAddedPerMinute, testThroughput, simulationMinutes);
+                resultsOutputEl.innerHTML += `<p>Testing ${testThroughput} files/min... Max age: ${result.maxAgeObserved} min</p>`;
+                resultsOutputEl.scrollTop = resultsOutputEl.scrollHeight; // Auto-scroll
+
+                if (result.maxAgeObserved <= slaMinutes) {
+                    let finalOutput = `<p><strong>Search Complete</strong></p>`;
+                    finalOutput += `<p class="text-green-600 font-semibold">✅ Ideal throughput found!</p>`;
+                    finalOutput += `<p>To meet a ${slaMinutes}-minute SLA, you need a sustained throughput of at least <strong>${testThroughput} files/minute</strong>.</p>`;
+                    resultsOutputEl.innerHTML = finalOutput;
+                    updateChart(result.oldestFileAgeData, slaMinutes, simulationMinutes);
+                    searchInProgress = false;
+                } else {
+                    testThroughput++;
+                    if (testThroughput > avgInputRate * 5) { // Safety break
+                        resultsOutputEl.innerHTML += `<p class="text-red-600 font-semibold">❌ Could not find a suitable throughput within the search range.</p>`;
+                        searchInProgress = false;
+                    } else {
+                       setTimeout(searchStep, 10); // Next step
+                    }
+                }
+            }
+            setTimeout(searchStep, 10);
+        });
+
+        // Initial chart render on page load
+        runSimulationBtn.click();
+    </script>
+</body>
+</html>
