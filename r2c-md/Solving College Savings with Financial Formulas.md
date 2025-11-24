@@ -9,17 +9,11 @@ This document explores a common financial planning challenge: determining the mo
 The goal is to calculate the precise monthly contribution needed to save for a four-year college education.
 
 **Key Constraints & Context:**
-
 - **Total Cost:** A known total cost for a four-year degree.
-    
 - **Withdrawals:** The cost is paid in four equal installments, withdrawn at the **start** of each college year.
-    
 - **Investment Growth:** All savings are invested and grow at a fixed annual interest rate, compounded monthly.
-    
 - **Starting Point:** There may be an existing balance in the savings account.
-    
 - **The Goal:** The investment account should have a balance of exactly zero after the fourth and final college payment is made.
-    
 
 This is a classic financial planning problem that requires careful accounting for the time value of money—the principle that money today is worth more than the same amount in the future due to its potential to earn interest.
 
@@ -36,21 +30,13 @@ If you have a continuous function and can find two points where the function's o
 **Application to the Problem:**
 
 - **Function:** `simulate_balance(monthly_contribution)` which returns the final balance.
-    
 - **Goal:** Find the `monthly_contribution` where `simulate_balance` returns `0`.
-    
 - **Process:**
-    
     1. Start with a low guess (e.g., `$0`) and a high guess for the monthly contribution.
-        
     2. Calculate the final balance using the midpoint of the guess range.
-        
     3. If the balance is too high, the midpoint becomes the new high guess.
-        
     4. If the balance is too low, the midpoint becomes the new low guess.
-        
     5. Repeat until the balance is acceptably close to zero.
-        
 
 Here is the Python code for this approach:
 
@@ -98,24 +84,15 @@ def college_schedule_bisection(
 #### Example Calculation (Bisection Method)
 
 Let's use a concrete example:
-
 - **College Cost:** `$200,000`
-    
 - **Annual Rate:** `6%`
-    
 - **Kid's Current Age:** `10` (8 years to save)
-    
 - **Start Balance:** `$25,000`
-    
 
 The algorithm would work like this:
-
 1. **Set Bounds:** `lower_bound = $0`, `upper_bound = $4,167`.
-    
 2. **Iteration 1:**
-    
     - Guess `mid_contribution = ($0 + $4167) / 2 = $2083.50`.
-        
     - Run `simulate_balance($2083.50)`. The simulation calculates that this contribution is far too high, leaving a large positive balance at the end.
         
     - **Result:** The answer is between $0 and $2083.50. The new `upper_bound` is `$2083.50`.

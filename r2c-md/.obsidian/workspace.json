@@ -34,9 +34,21 @@
               "icon": "lucide-file",
               "title": "Solving College Savings with Financial Formulas"
             }
+          },
+          {
+            "id": "a3d850404a90da56",
+            "type": "leaf",
+            "state": {
+              "type": "release-notes",
+              "state": {
+                "currentVersion": "1.9.10"
+              },
+              "icon": "lucide-book-up",
+              "title": "Release Notes 1.9.10"
+            }
           }
         ],
-        "currentTab": 1
+        "currentTab": 2
       }
     ],
     "direction": "vertical"
@@ -175,6 +187,7 @@
   },
   "left-ribbon": {
     "hiddenItems": {
+      "bases:Create new base": false,
       "switcher:Open quick switcher": false,
       "graph:Open graph view": false,
       "canvas:Create new canvas": false,
@@ -183,7 +196,7 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "bad054e46a72a715",
+  "active": "a3d850404a90da56",
   "lastOpenFiles": [
     "Solving College Savings with Financial Formulas.md",
     "Index.md",
