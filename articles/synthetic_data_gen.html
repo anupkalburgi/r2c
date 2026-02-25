@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synthetic Data Algorithm Lab</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React Dependencies (Order is critical for Recharts UMD) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
+    
+    <!-- Recharts (Must load after React, PropTypes, and React-Is) -->
+    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo } = React;
+        const { 
+            BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
+        } = window.Recharts || {};
+
+        // --- Inline Icons ---
+        const Icon = ({ name, size = 18, className = "" }) => {
+            const icons = {
+                zap: <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />,
+                cpu: <><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3" /></>,
+                server: <><rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /><line x1="6" y1="6" x2="6" y2="6" /><line x1="6" y1="18" x2="6" y2="18" /></>,
+                shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
+                database: <><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></>,
+                layers: <><polygon points="12 2 2 7 12 12 22 7 12 2" /><polygon points="2 17 12 22 22 17" /><polygon points="2 12 12 17 22 12" /></>,
+                clock: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
+                alert: <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>,
+                code: <><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></>,
+                activity: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />,
+                chevronRight: <polyline points="9 18 15 12 9 6" />,
+                info: <><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></>
+            };
+            return (
+                <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                    {icons[name] || null}
+                </svg>
+            );
+        };
+
+        // --- Logic Utilities ---
+        const hash = (seed, id) => {
+            let h1 = (seed ^ id) >>> 0;
+            h1 = Math.imul(h1 ^ (h1 >>> 16), 0x85ebca6b);
+            h1 = Math.imul(h1 ^ (h1 >>> 13), 0xc2b2ae35);
+            return (h1 ^ (h1 >>> 16)) >>> 0;
+        };
+
+        const lcg = (seed) => {
+            let current = seed;
+            return () => { current = (current * 1664525 + 1013904223) % 4294967296; return current / 4294967296; };
+        };
+
+        const feistelPermute = (id, N, seed) => {
+            let numBits = (N - 1).toString(2).length;
+            if (numBits % 2 !== 0) numBits++;
+            const half = numBits / 2;
+            const mask = (1 << half) - 1;
+            let left = (id >>> half) & mask;
+            let right = id & mask;
+            for (let r = 0; r < 6; r++) {
+                let nextLeft = right;
+                let nextRight = left ^ (Math.imul(right ^ (seed + r), 0x5a35) & mask);
+                left = nextLeft;
+                right = nextRight;
+            }
+            let result = (left << half) | right;
+            return result >= N ? feistelPermute(result, N, seed + 100) : result; 
+        };
+
+        // --- UI Components ---
+        const Card = ({ title, iconName, children, badge, badgeColor = "blue" }) => (
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <div className="flex items-center gap-2">
+                        <Icon name={iconName} className="text-slate-500" />
+                        <h2 className="font-bold text-slate-800 uppercase text-xs tracking-wider">{title}</h2>
+                    </div>
+                    {badge && <span className={`text-[10px] uppercase font-black px-2 py-0.5 rounded bg-${badgeColor}-100 text-${badgeColor}-700 border border-${badgeColor}-200`}>{badge}</span>}
+                </div>
+                <div className="p-6">{children}</div>
+            </div>
+        );
+
+        const DeepDive = ({ title, children }) => (
+            <div className="mt-12 p-8 bg-slate-900 text-slate-300 rounded-2xl border border-slate-800 shadow-2xl">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                        <Icon name="code" className="text-blue-400" size={24} />
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-bold text-white leading-tight uppercase tracking-tight">Technical Implementation</h3>
+                        <p className="text-sm text-slate-500 font-mono italic">{title}</p>
+                    </div>
+                </div>
+                <div className="grid md:grid-cols-2 gap-8 text-sm leading-relaxed border-t border-slate-800 pt-6">
+                    {children}
+                </div>
+            </div>
+        );
+
+        const CodeBlock = ({ code }) => (
+            <div className="bg-black/60 rounded-lg p-4 font-mono text-[11px] text-blue-300 border border-slate-800 overflow-x-auto my-4 whitespace-pre leading-5">
+                {code}
+            </div>
+        );
+
+        // --- Tabs ---
+        const RandomnessLab = ({ partitions, setPartitions, globalSeed }) => {
+            const dbRows = useMemo(() => {
+                const rows = [];
+                const rowsPerPart = Math.ceil(10 / partitions);
+                for (let i = 0; i < 10; i++) {
+                    const partIdx = Math.floor(i / rowsPerPart);
+                    const rng = lcg(globalSeed + partIdx);
+                    const offset = i % rowsPerPart;
+                    let val = 0;
+                    for (let k = 0; k <= offset; k++) val = rng();
+                    rows.push({ id: i, value: (val * 1000).toFixed(2), part: partIdx });
+                }
+                return rows;
+            }, [partitions, globalSeed]);
+
+            const v1Rows = useMemo(() => Array.from({ length: 10 }, (_, i) => ({
+                id: i,
+                value: ( (hash(globalSeed, i) % 100000) / 100).toFixed(2)
+            })), [globalSeed]);
+
+            return (
+                <div className="space-y-6">
+                    <div className="grid md:grid-cols-3 gap-6">
+                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                            <label className="block text-[10px] font-black uppercase text-blue-900 mb-2 tracking-widest">Cluster Partitions</label>
+                            <input type="range" min="1" max="10" value={partitions} onChange={e => setPartitions(parseInt(e.target.value))} className="w-full h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer" />
+                            <div className="flex justify-between text-xs text-blue-700 mt-2 font-mono font-bold"><span>Small Cluster</span><span>{partitions} Parts</span><span>Large Cluster</span></div>
+                        </div>
+                        <div className="md:col-span-2 text-sm text-slate-600 flex items-center bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+                            <Icon name="info" className="mr-3 text-blue-500 shrink-0" />
+                            <p>Vary the partition count to simulate cluster resizing. Notice how <strong>dbldatagen</strong> values drift as rows shift across partition boundaries, while <strong>v1</strong> maintains cell-level determinism.</p>
+                        </div>
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-8">
+                        <Card title="dbldatagen (Stateful RNG)" iconName="server" badge="Environmental Drift" badgeColor="red">
+                            <table className="w-full text-xs font-mono">
+                                <thead className="bg-slate-100 text-slate-500 border-b"><tr><th className="p-2 text-left">ROW_ID</th><th className="p-2 text-left">PARTITION</th><th className="p-2 text-right">VAL</th></tr></thead>
+                                <tbody>{dbRows.map(r => (<tr key={r.id} className="border-b hover:bg-red-50"><td className="p-2">{r.id}</td><td className="p-2 text-slate-400">P_ID: {r.part}</td><td className="p-2 text-right font-bold text-red-600">{r.value}</td></tr>))}</tbody>
+                            </table>
+                        </Card>
+                        <Card title="v1 (Stateless Hash)" iconName="zap" badge="Deterministic" badgeColor="green">
+                            <table className="w-full text-xs font-mono">
+                                <thead className="bg-slate-100 text-slate-500 border-b"><tr><th className="p-2 text-left">ROW_ID</th><th className="p-2 text-left">PARTITION</th><th className="p-2 text-right">VAL</th></tr></thead>
+                                <tbody>{v1Rows.map(r => (<tr key={r.id} className="border-b hover:bg-green-50"><td className="p-2">{r.id}</td><td className="p-2 text-slate-300 italic">Static</td><td className="p-2 text-right font-bold text-green-600">{r.value}</td></tr>))}</tbody>
+                            </table>
+                        </Card>
+                    </div>
+                    <DeepDive title="Mersenne Twister vs xxhash64">
+                        <div>
+                            <h4 className="text-blue-400 font-bold mb-3 uppercase tracking-tighter">The Mersenne Twister Problem</h4>
+                            <p>Spark's <code>rand()</code> uses a <strong>Mersenne Twister</strong>, a stateful PRNG. Because it is stateful, it cannot jump to an arbitrary index without calculating all preceding values.</p>
+                            <CodeBlock code={`# dbldatagen implementation\nseed = user_seed + partition_id\nprng = MersenneTwister(seed)\nfor row in partition:\n    yield prng.nextDouble()`} />
+                            <p className="mt-2 text-slate-400">If Row 10 moves from Partition 0 to Partition 1, its seed—and its relative offset—changes, causing the value to shift.</p>
+                        </div>
+                        <div>
+                            <h4 className="text-blue-400 font-bold mb-3 uppercase tracking-tighter">Stateless Cell Hashing</h4>
+                            <p><strong>v1</strong> avoids PRNG state. Every cell is a pure function of the global <code>row_id</code> generated by <code>spark.range()</code>.</p>
+                            <CodeBlock code={`# v1 Vectorized Expression\ncolumn_seed = derive_seed(col_name)\nreturn F.xxhash64(column_seed, row_id)`} />
+                            <p className="mt-2 text-slate-400 italic">xxhash64 is stateless and vectorized in Photon/JVM. The value for Row 10 is mathematically locked regardless of the execution environment.</p>
+                        </div>
+                    </DeepDive>
+                </div>
+            );
+        };
+
+        const PKLab = () => {
+            const [rowCount, setRowCount] = useState(1000000);
+            const collisionStats = useMemo(() => {
+                const H = Math.pow(2, 32);
+                const prob = 1 - Math.exp(-(Math.pow(rowCount, 2)) / (2 * H));
+                const lostRows = Math.floor(rowCount * prob);
+                return { prob, lostRows, actualRows: rowCount - lostRows };
+            }, [rowCount]);
+            const feistelRows = Array.from({ length: 8 }, (_, i) => ({ input: i, output: feistelPermute(i, 1000, 123) }));
+
+            return (
+                <div className="space-y-6">
+                    <div className="grid md:grid-cols-2 gap-8">
+                        <Card title="Birthday Paradox Collisions" iconName="alert" badge="Shuffle Cost" badgeColor="red">
+                            <div className="space-y-4">
+                                <div className="flex gap-4 items-center">
+                                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 text-nowrap">Target Rows</label>
+                                    <input type="number" step="100000" value={rowCount} onChange={e => setRowCount(parseInt(e.target.value))} className="flex-1 bg-slate-50 border rounded p-1 font-mono text-sm" />
+                                </div>
+                                <div className="bg-red-50 p-4 border border-red-200 rounded font-mono text-xs space-y-2">
+                                    <div className="flex justify-between"><span>Collision Prob:</span><span className="font-bold text-red-600">{(collisionStats.prob * 100).toFixed(2)}%</span></div>
+                                    <div className="flex justify-between"><span>Estimated Data Loss:</span><span className="font-bold">-{collisionStats.lostRows.toLocaleString()} rows</span></div>
+                                </div>
+                                <p className="text-[10px] text-slate-500 italic">dbldatagen requires a full cluster shuffle to deduplicate these IDs via dropDuplicates().</p>
+                            </div>
+                        </Card>
+                        <Card title="Bijective Feistel Scrambling" iconName="shield" badge="Shuffle-Free" badgeColor="green">
+                            <div className="grid grid-cols-4 gap-2">
+                                {feistelRows.map(r => (<div key={r.input} className="border rounded p-2 text-center bg-slate-50 font-mono"><div className="text-[9px] text-slate-400">IN:{r.input}</div><div className="text-blue-600 font-bold text-xs">{r.output}</div></div>))}
+                            </div>
+                            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded text-xs text-green-800 font-medium italic">Bijective mapping: Every input maps to exactly one unique output. No collisions by construction.</div>
+                        </Card>
+                    </div>
+                    <DeepDive title="Deduplication Shuffle vs Mathematical Scrambling">
+                        <div>
+                            <h4 className="text-blue-400 font-bold mb-3 uppercase tracking-tighter">The Shuffle-and-Drop Model</h4>
+                            <p>To generate non-sequential unique keys, <strong>dbldatagen</strong> picks random numbers from a 32-bit hash space ($2^{32}$). This triggers collisions at scale.</p>
+                            <CodeBlock code={`# dbldatagen scale-up cost\ndf.withColumn("id", rand_hash_id())\n  .dropDuplicates(["id"]) # Full Shuffle\n  .orderBy("id")          # Full Sort`} />
+                            <p className="mt-2 text-slate-400 italic">At 1B rows, this shuffle materializes TBs of data just to remove collisions that shouldn't have been there.</p>
+                        </div>
+                        <div>
+                            <h4 className="text-blue-400 font-bold mb-3 uppercase tracking-tighter">The v1 Feistel Network</h4>
+                            <p><strong>v1</strong> implements a 6-round Feistel Network scrambler. It scrambles the row index in a way that is guaranteed to be a permutation.</p>
+                            <CodeBlock code={`# v1 Bijective Logic\ndef scramble(id, N):\n    L, R = split_bits(id)\n    R' = L ^ mix(R)\n    L' = R\n    return merge_bits(L', R')`} />
+                            <p className="mt-2 text-slate-400">This is an $O(1)$ calculation per row that produces unique values across the entire range $[0, N)$ without a single byte crossing the network.</p>
+                        </div>
+                    </DeepDive>
+                </div>
+            );
+        };
+
+        const FKLab = () => {
+            const [parentCount] = useState(10);
+            const [isDropped, setIsDropped] = useState(false);
+            const parentRows = useMemo(() => {
+                let base = Array.from({ length: parentCount }, (_, i) => ({ id: i + 1, deleted: false }));
+                if (isDropped) { base[2].deleted = true; base[5].deleted = true; }
+                return base;
+            }, [parentCount, isDropped]);
+            const childRows = useMemo(() => Array.from({ length: 12 }, (_, i) => {
+                const targetId = (hash(777, i) % parentCount) + 1;
+                const isOrphan = isDropped && parentRows.find(p => p.id === targetId)?.deleted;
+                return { id: i + 100, fk: targetId, isOrphan };
+            }), [parentCount, isDropped, parentRows]);
+
+            return (
+                <div className="space-y-6">
+                    <div className="bg-white p-4 rounded border flex items-center gap-4 shadow-sm">
+                        <button onClick={() => setIsDropped(!isDropped)} className={`px-4 py-2 rounded text-xs font-black uppercase tracking-widest transition-all ${isDropped ? 'bg-red-500 text-white shadow-inner' : 'bg-slate-800 text-white'}`}>
+                            {isDropped ? 'Collisions Active' : 'Simulate Parent Data Loss'}
+                        </button>
+                        <p className="text-xs text-slate-500">Simulating gaps in parent tables caused by primary key collisions.</p>
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-8">
+                        <Card title="Parent (Customers)" iconName="database">
+                            <div className="grid grid-cols-5 gap-2">
+                                {parentRows.map(p => (<div key={p.id} className={`p-2 border rounded text-center ${p.deleted ? 'bg-red-100 opacity-20' : 'bg-blue-50 border-blue-200'}`}><div className="text-[9px] font-bold text-slate-400 uppercase">PK</div><div className="font-mono text-sm">{p.id}</div></div>))}
+                            </div>
+                        </Card>
+                        <Card title="Child (Orders)" iconName="layers">
+                            <div className="max-h-[250px] overflow-y-auto border rounded divide-y text-xs font-mono bg-white">
+                                {childRows.map(c => (<div key={c.id} className={`p-2 flex justify-between items-center ${c.isOrphan ? 'bg-red-50 text-red-700 font-bold' : ''}`}><span>ORD_{c.id}</span><div className="flex items-center gap-2"><span className="text-slate-400">FK →</span><span className={`px-2 py-0.5 rounded ${c.isOrphan ? 'bg-red-600 text-white animate-pulse' : 'bg-green-100 text-green-700'}`}>CUST_{c.fk}</span></div></div>))}
+                            </div>
+                        </Card>
+                    </div>
+                    <DeepDive title="Join-Free Integrity">
+                        <div>
+                            <h4 className="text-blue-400 font-bold mb-3 uppercase tracking-tighter">Manual Hash Conventions</h4>
+                            <p>Dbldatagen recommends replicating hash formulas across tables. But if the parent loses rows to collisions, the child table will reference non-existent records.</p>
+                            <CodeBlock code={`# dbldatagen convention failure\nchild_df.join(parent_df, "fk", "inner")\n# Orphan events silently disappear from result`} />
+                        </div>
+                        <div>
+                            <h4 className="text-blue-400 font-bold mb-3 uppercase tracking-tighter">Deterministic Reconstruction</h4>
+                            <p><strong>v1</strong> recognizes that a Parent's PK is a pure function: $PK = f(index)$. To generate a valid FK, the child simply re-evaluates that function.</p>
+                            <CodeBlock code={`# v1 Reconstruction Logic\nsample_idx = distribution_sample(child_id)\nfk_val = parent_pk_formula(sample_idx)`} />
+                            <p className="mt-2 text-slate-400 italic">Integrity is guaranteed by logic. You never need to join tables or broadcast parent IDs to ensure valid references.</p>
+                        </div>
+                    </DeepDive>
+                </div>
+            );
+        };
+
+        const DistributionsLab = () => {
+            const [skew, setSkew] = useState(1.5);
+            const data = useMemo(() => Array.from({ length: 30 }, (_, i) => ({ name: i, val: Math.floor(100 / Math.pow(i + 1, skew)) })), [skew]);
+            return (
+                <div className="space-y-6">
+                    <div className="grid md:grid-cols-2 gap-8">
+                        <Card title="Native Sampling Math" iconName="zap" badge="v1" badgeColor="green">
+                            <div className="space-y-4">
+                                <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400">Zipf Skew (α): {skew}</label>
+                                <input type="range" min="1.1" max="2.5" step="0.1" value={skew} onChange={e => setSkew(parseFloat(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" />
+                                <div className="h-40 w-full mt-4">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={data}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                            <XAxis dataKey="name" hide /><YAxis hide /><Tooltip /><Bar dataKey="val" fill="#3b82f6" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        </Card>
+                        <Card title="Python Bottlenecks" iconName="activity" badge="dbldatagen" badgeColor="red">
+                            <div className="text-[10px] font-mono bg-red-50 p-4 rounded border border-red-200 mb-4">
+                                [JVM] → [Arrow Serialize] → [Python NumPy] → [Arrow Deserialize] → [JVM]
+                            </div>
+                            <p className="text-xs text-slate-600">dbldatagen executes complex distributions via <code>pandas_udf</code>, adding heavy serialization overhead and context-switching for every batch.</p>
+                        </Card>
+                    </div>
+                    <DeepDive title="Inverse CDF vs NumPy Wrappers">
+                        <div>
+                            <h4 className="text-blue-400 font-bold mb-3 uppercase tracking-tighter">CLT Normal Approximation</h4>
+                            <p>v1 avoids UDFs by using the Central Limit Theorem. It sums 12 independent uniform draws inside a native Spark expression.</p>
+                            <CodeBlock code={`# v1 Native Normal\nz = (sum(xxhash64(seed, row_id, i) for i in 0..11) - 6.0)\nreturn z * stddev + mean`} />
+                        </div>
+                        <div>
+                            <h4 className="text-blue-400 font-bold mb-3 uppercase tracking-tighter">Inverse CDF Logic</h4>
+                            <p>For Power-Laws, v1 implements the Inverse CDF function using Catalyst's native <code>pow</code> and <code>log</code> functions.</p>
+                            <CodeBlock code={`# v1 Native Zipf\ninv = N_parent * pow(1.0 - uniform_u, 1.0 / (alpha - 1.0))\nreturn floor(inv)`} />
+                        </div>
+                    </DeepDive>
+                </div>
+            );
+        };
+
+        const CatalystLab = () => (
+            <div className="space-y-6">
+                <div className="grid md:grid-cols-2 gap-8 text-center uppercase tracking-widest">
+                    <Card title="Incremental Selection" iconName="layers" badge="O(Depth)">
+                        <div className="flex flex-col items-center gap-2">
+                            {['Round 4: Expressions', 'Round 3: Derived', 'Round 2: Bases', 'Round 1: Identity'].map((s, i) => (
+                                <React.Fragment key={s}>
+                                    <div className="p-2 border rounded bg-blue-50 w-full text-[10px] font-bold">{s}</div>
+                                    {i < 3 && <Icon name="chevronRight" className="rotate-90 text-slate-300" />}
+                                </React.Fragment>
+                            ))}
+                        </div>
+                    </Card>
+                    <Card title="Unified Projection" iconName="zap" badge="O(1)">
+                        <div className="flex flex-col h-full justify-center items-center gap-2">
+                            <div className="p-4 border-2 border-green-500 rounded bg-green-50 w-full font-black shadow-lg">Fused Project [Col A..Col Z]</div>
+                            <Icon name="chevronRight" className="rotate-90 text-slate-300" />
+                            <div className="p-2 border rounded bg-slate-100 w-full text-[10px] font-bold">Spark.Range</div>
+                        </div>
+                    </Card>
+                </div>
+                <DeepDive title="Analysis Overhead vs Fused Projections">
+                    <div>
+                        <h4 className="text-blue-400 font-bold mb-3 uppercase tracking-tighter">The Analysis Wall</h4>
+                        <p>Dbldatagen builds data in "layers". Each round calls <code>.select("*", ...)</code>. For a schema with 185 columns and 5 layers, Catalyst must resolve 1,000+ references through a tower of nodes.</p>
+                        <p className="mt-2 text-slate-400 italic">Planning time often exceeds execution time at scale.</p>
+                    </div>
+                    <div>
+                        <h4 className="text-blue-400 font-bold mb-3 uppercase tracking-tighter">Stateless Fused Plan</h4>
+                        <p><strong>v1</strong> resolves all column dependencies in the Python driver during planning. It compiles the entire schema into a single <code>select</code> statement.</p>
+                        <CodeBlock code={`# v1 Plan Profile\nLogical Plan: Project -> Range\nPlanning Time: ~20ms regardless of schema size`} />
+                    </div>
+                </DeepDive>
+            </div>
+        );
+
+        const CDCLab = () => {
+            const [batch, setBatch] = useState(1);
+            const history = useMemo(() => Array.from({ length: 100 }, (_, k) => {
+                const birth = Math.floor(k / 10);
+                const status = batch < birth ? "Future" : (batch === birth ? "Insert" : ( (batch-birth)%3===0 ? "Update" : (batch > birth+8 ? "Delete" : "Active")));
+                return { k, status };
+            }), [batch]);
+
+            return (
+                <div className="space-y-6">
+                    <div className="bg-slate-900 text-white p-6 rounded-xl border border-slate-700 shadow-2xl">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-lg font-black uppercase"><Icon name="clock" className="inline mr-2 text-blue-400" /> Stateless CDC</h3>
+                            <div className="flex items-center gap-4 bg-slate-800 px-4 py-2 rounded-lg border border-slate-700">
+                                <button onClick={() => setBatch(Math.max(0, batch - 1))} className="text-slate-400 hover:text-white"><Icon name="chevronRight" className="rotate-180" /></button>
+                                <span className="text-2xl font-mono text-blue-400 font-bold w-8 text-center">{batch}</span>
+                                <button onClick={() => setBatch(batch + 1)} className="text-slate-400 hover:text-white"><Icon name="chevronRight" /></button>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1 max-h-[150px] overflow-y-auto p-4 bg-black/40 rounded">
+                            {history.map(r => (<div key={r.k} className={`w-3 h-3 rounded-sm ${r.status === "Insert" ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : (r.status === "Update" ? "bg-blue-500" : (r.status === "Delete" ? "bg-red-500" : (r.status === "Active" ? "bg-slate-700 opacity-50" : "bg-slate-800 opacity-5")))}`}></div>))}
+                        </div>
+                    </div>
+                    <DeepDive title="The Three Clocks Model">
+                        <div>
+                            <h4 className="text-blue-400 font-bold mb-3 uppercase tracking-tighter">Why CDC Breaks dbldatagen</h4>
+                            <p>CDC requires "Temporal Stability". Because dbldatagen values shift with cluster size, you cannot maintain row identity over time without materializing the entire history to disk.</p>
+                        </div>
+                        <div>
+                            <h4 className="text-blue-400 font-bold mb-3 uppercase tracking-tighter">Stateless Lifecycle Functions</h4>
+                            <p><strong>v1</strong> defines three O(1) functions for every Row ID. These calculate if a row is born, updated, or deleted at batch <code>t</code>.</p>
+                            <CodeBlock code={`# v1 Stateless CDC\ndef update_due(row_id, batch_id):\n    return (batch_id - birth_tick(row_id)) % freq == 0`} />
+                            <p className="mt-2 text-xs italic">Batch 47 can be generated in isolation. No state storage, no history reads.</p>
+                        </div>
+                    </DeepDive>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('Randomness');
+            const [partitions, setPartitions] = useState(4);
+            const tabs = [
+                { id: 'Randomness', label: 'Randomness' },
+                { id: 'PKs', label: 'Primary Keys' },
+                { id: 'FKs', label: 'Foreign Keys' },
+                { id: 'Distributions', label: 'Distributions' },
+                { id: 'Catalyst', label: 'Catalyst Plan' },
+                { id: 'CDC', label: 'CDC Architecture' }
+            ];
+
+            return (
+                <div className="min-h-screen pb-20">
+                    <nav className="bg-slate-900 text-white p-4 border-b border-slate-700 sticky top-0 z-50">
+                        <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+                            <div className="flex items-center gap-2"><Icon name="cpu" size={24} className="text-blue-400" /><h1 className="text-xl font-bold uppercase tracking-tight">Algorithm Lab</h1></div>
+                            <div className="flex flex-wrap justify-center gap-1">
+                                {tabs.map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-wider uppercase transition-all ${activeTab === tab.id ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>{tab.label}</button>))}
+                            </div>
+                        </div>
+                    </nav>
+                    <main className="max-w-5xl mx-auto px-4 pt-8">
+                        <header className="mb-8 border-l-4 border-blue-600 pl-4">
+                            <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter">{activeTab}</h2>
+                            <p className="text-slate-500 font-mono text-xs mt-1">Comparing dbldatagen stateful generators vs v1 stateless logic.</p>
+                        </header>
+                        <div className="transition-all duration-700">
+                            {activeTab === 'Randomness' && <RandomnessLab partitions={partitions} setPartitions={setPartitions} globalSeed={42} />}
+                            {activeTab === 'PKs' && <PKLab />}
+                            {activeTab === 'FKs' && <FKLab />}
+                            {activeTab === 'Catalyst' && <CatalystLab />}
+                            {activeTab === 'CDC' && <CDCLab />}
+                            {activeTab === 'Distributions' && <DistributionsLab />}
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
